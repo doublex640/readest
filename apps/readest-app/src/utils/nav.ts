@@ -10,6 +10,33 @@ import { windowNeedsClientOutline } from '@/utils/window';
 // launches that read the same window list do not pick the same label.
 const pendingLabels = new Set<string>();
 
+declare global {
+  interface Window {
+    /**
+     * Browser arguments the Windows shell had to hand WebView2 because the app
+     * was started with `READEST_CDP_PORT` (see src-tauri/src/lib.rs). `null` in
+     * every normal launch.
+     */
+    __READEST_CDP_BROWSER_ARGS__?: string | null;
+  }
+}
+
+/**
+ * Repeat the main window's browser arguments on a new window.
+ *
+ * WebView2 refuses a second webview whose arguments differ from the first one's
+ * in the same data folder (0x8007139F), and a closed window does not count --
+ * the state outlives it. Without this, turning the DevTools protocol port on
+ * would make every attempt to open a book fail. Empty in every normal launch,
+ * so the window gets wry's defaults.
+ */
+const cdpBrowserArgs = () => {
+  const args = typeof window === 'undefined' ? null : window.__READEST_CDP_BROWSER_ARGS__;
+  return args ? { additionalBrowserArgs: args } : {};
+};
+
+export const cdpWindowOptions = cdpBrowserArgs;
+
 // Take the first label no open or pending window holds. A counter of open
 // windows would hand out the label of a window that is still open once an
 // earlier one closes, and Tauri refuses to create a second window with that
@@ -45,6 +72,7 @@ const createReaderWindow = async (appService: AppService, url: string) => {
     scrollBarStyle: (appService.osPlatform === 'windows'
       ? 'fluentOverlay'
       : 'default') as unknown as ScrollBarStyle,
+    ...cdpBrowserArgs(),
   });
   win.once('tauri://created', () => {
     pendingLabels.delete(newLabel);
@@ -103,6 +131,7 @@ export const ensureMainLibraryWindow = async (appService: AppService) => {
     scrollBarStyle: (appService.osPlatform === 'windows'
       ? 'fluentOverlay'
       : 'default') as unknown as ScrollBarStyle,
+    ...cdpBrowserArgs(),
   });
   win.once('tauri://error', (e) => {
     console.error('error recreating main window', e);

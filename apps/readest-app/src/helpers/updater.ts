@@ -7,6 +7,7 @@ import { ScrollBarStyle } from '@tauri-apps/api/window';
 import { TranslationFunc } from '@/hooks/useTranslation';
 import { setUpdaterWindowVisible } from '@/components/UpdaterWindow';
 import { isTauriAppPlatform } from '@/services/environment';
+import { cdpWindowOptions } from '@/utils/nav';
 import { getAppVersion, isUpdateNewer } from '@/utils/version';
 import {
   CHECK_UPDATE_INTERVAL_SEC,
@@ -26,6 +27,7 @@ const showUpdateWindow = (latestVersion: string, scrollBarStyle: ScrollBarStyle)
     center: true,
     resizable: true,
     scrollBarStyle,
+    ...cdpWindowOptions(),
   });
   win.once('tauri://created', () => {
     console.log('new window created');

@@ -903,6 +903,37 @@ pub fn run() {
                     .unwrap_or(0)
             );
 
+            // `READEST_CDP_PORT=9222` opens the DevTools protocol endpoint the
+            // CEF runtime offers on Linux (see the `cef` block above and
+            // docs/testing.md), so the same debugger or test driver works on
+            // Windows too.
+            //
+            // It has to go in as a browser argument: WebView2 ignores its own
+            // `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` the moment the environment
+            // options carry arguments, and wry always fills those in (to drop
+            // the mini menu and SmartScreen). wry's defaults are therefore
+            // repeated verbatim -- setting this replaces them rather than adding
+            // to them. `allowed-origins` is what lets a client that sends an
+            // `Origin` header attach; the endpoint stays on loopback either way.
+            //
+            // The same string has to reach every window the frontend opens: a
+            // second webview whose arguments differ from the first one's in the
+            // same data folder is refused by WebView2 (0x8007139F), which would
+            // make books silently fail to open. It is handed to the page below
+            // so `createReaderWindow` can pass it on.
+            #[cfg(target_os = "windows")]
+            let cdp_browser_args: Option<String> = std::env::var("READEST_CDP_PORT")
+                .ok()
+                .and_then(|port| port.parse::<u16>().ok())
+                .map(|port| {
+                    format!(
+                        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+                         --remote-debugging-port={port} --remote-allow-origins=*"
+                    )
+                });
+            #[cfg(not(target_os = "windows"))]
+            let cdp_browser_args: Option<String> = None;
+
             let init_script = format!(
                 r#"
                     window.__READEST_APP_RUN_ID__ = "{app_run_id}";
@@ -910,6 +941,7 @@ pub fn run() {
                     if ({cli_access}) window.__READEST_CLI_ACCESS = true;
                     if ({is_appimage}) window.__READEST_IS_APPIMAGE = true;
                     if ({updater_disabled}) window.__READEST_UPDATER_DISABLED = true;
+                    window.__READEST_CDP_BROWSER_ARGS__ = {cdp_browser_args_json};
                     window.addEventListener('DOMContentLoaded', function() {{
                         document.documentElement.classList.add('edge-to-edge');
                         const isTauriLocal = window.location.protocol === 'tauri:' ||
@@ -935,7 +967,13 @@ pub fn run() {
                 is_eink = is_eink,
                 cli_access = cli_access,
                 is_appimage = is_appimage,
-                updater_disabled = updater_disabled
+                updater_disabled = updater_disabled,
+                // A JSON literal, so the page gets a string or `null` and never
+                // has to parse or quote anything itself.
+                cdp_browser_args_json = cdp_browser_args
+                    .as_deref()
+                    .and_then(|args| serde_json::to_string(args).ok())
+                    .unwrap_or_else(|| "null".to_string())
             );
 
             let app_handle = app.handle().clone();
@@ -1007,6 +1045,10 @@ pub fn run() {
                     builder = builder
                         .transparent(false)
                         .scroll_bar_style(ScrollBarStyle::FluentOverlay);
+
+                    if let Some(args) = &cdp_browser_args {
+                        builder = builder.additional_browser_args(args);
+                    }
                 }
                 #[cfg(target_os = "linux")]
                 {
