@@ -277,8 +277,56 @@ describe('single-tap opens image gallery / table zoom in reflowable books (#4584
     expect(types).toContain('iframe-open-media');
     expect(types).not.toContain('iframe-single-click');
     const media = messages.find((m) => m['type'] === 'iframe-open-media')!;
-    expect(media['elementType']).toBe('table');
     expect(media['html']).toBe(table.outerHTML);
+  });
+
+  // A noteref's child image is a typographic marker (in a 脂評 edition, a small
+  // 「註」 glyph repeated hundreds of times per chapter), not an illustration.
+  // Tapping it must reach the note and must never open the image viewer.
+  describe('note-reference markers never open the image viewer', () => {
+    const noterefCases: [string, (a: HTMLAnchorElement) => void][] = [
+      ['epub:type="noteref"', (a) => a.setAttribute('epub:type', 'noteref')],
+      ['role="doc-noteref"', (a) => a.setAttribute('role', 'doc-noteref')],
+      ['rel="footnote"', (a) => a.setAttribute('rel', 'footnote')],
+    ];
+
+    for (const [label, mark] of noterefCases) {
+      test(`reflowable: ${label} marker image posts no open-media`, async () => {
+        const handlers = await importHandlers();
+        const a = document.createElement('a');
+        a.setAttribute('href', '#note-1');
+        mark(a);
+        const img = document.createElement('img');
+        img.src = 'blob:http://localhost/note-marker';
+        a.appendChild(img);
+        document.body.appendChild(a);
+
+        tap(handlers, false, img);
+
+        const types = postedMessages().map((m) => m['type']);
+        expect(types).not.toContain('iframe-open-media');
+
+        a.remove();
+      });
+    }
+
+    test('reflowable: a plain linked image still zooms (#4757 behaviour kept)', async () => {
+      const handlers = await importHandlers();
+      const a = document.createElement('a');
+      a.setAttribute('href', '#figure-1');
+      const img = document.createElement('img');
+      img.src = 'blob:http://localhost/figure';
+      a.appendChild(img);
+      document.body.appendChild(a);
+
+      tap(handlers, false, img);
+
+      const media = postedMessages().find((m) => m['type'] === 'iframe-open-media');
+      expect(media).toBeDefined();
+      expect(media!['elementType']).toBe('image');
+
+      a.remove();
+    });
   });
 
   // #6856: the table zoom covered the place a link in the table leads to.

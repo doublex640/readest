@@ -571,6 +571,31 @@ export const handleClick = (
       '.qqreader-footnote',
     ].join(', ');
     const footnote = element?.closest(footnoteSelector);
+    // EPUB3 marks a note reference with `epub:type="noteref"`; ARIA spells the
+    // same thing `role="doc-noteref"`, and older books use `rel="footnote"`.
+    // None of those are in `footnoteSelector` above, which only knows the
+    // private classes of a few Chinese reading apps.
+    //
+    // A noteref's child image is a typographic marker — in a 脂評 edition it is
+    // a little 「註」 glyph repeated once per annotation, hundreds per chapter —
+    // not an illustration. Without this check `detectMediaTarget` claims it, so
+    // one tap does both: the link handler opens the note popup *and* the image
+    // viewer opens full-screen on the marker glyph, on top of everything. The
+    // reader sees "another page" appear for no reason and the note is buried
+    // underneath. Skip the media path entirely and let the link handler own it.
+    const isNoteReference = (el: Element | null): boolean => {
+      const anchor = el?.closest('a[href]');
+      if (!anchor) return false;
+      if (/\bdoc-noteref\b/.test(anchor.getAttribute('role') ?? '')) return true;
+      if (/\bfootnote\b/.test(anchor.getAttribute('rel') ?? '')) return true;
+      // `epub:type` may or may not survive as a literal attribute name
+      // depending on how the section was parsed, so match on the suffix.
+      return anchor
+        .getAttributeNames()
+        .some(
+          (name) => /(^|:)type$/.test(name) && /\bnoteref\b/.test(anchor.getAttribute(name) ?? ''),
+        );
+    };
     // In reflowable books a single tap on an image/table opens the media
     // viewer. A media element wrapped in a plain link (e.g. a figure linking to
     // its full-resolution image) should still zoom rather than follow the link
@@ -579,7 +604,9 @@ export const handleClick = (
     // tap-to-turn, so their media rides along on the single click like media
     // filling a reflowable page, and a linked image there stays a link.
     const media =
-      !footnote && !(isFixedLayout && element?.closest('a')) ? detectMediaTarget(element) : null;
+      !footnote && !isNoteReference(element) && !(isFixedLayout && element?.closest('a'))
+        ? detectMediaTarget(element)
+        : null;
     const pageMedia = media && element && (isFixedLayout || fillsPage(element)) ? media : null;
     if (
       !media &&
