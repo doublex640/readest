@@ -457,10 +457,20 @@ type MediaTarget = { elementType: 'image'; src: string } | { elementType: 'table
 // layout table, not content: claiming it as media makes any tap on its text
 // offer the table viewer in the page's center tap zone. Tables larger than a
 // couple of pages are layout.
+//
+// The page size is the box foliate publishes on the root (`--available-*`):
+// one page. The iframe's own client size is NOT a page — the section document
+// is content-sized (measured 1040x6480 paginated, 8083x720 scrolled on the
+// 脂評匯校本), so a client-size basis makes a chapter-long table look about
+// one page "big" and the check never fires.
 const isLayoutTable = (table: HTMLElement) => {
   const doc = table.ownerDocument;
-  const pageWidth = doc.documentElement.clientWidth;
-  const pageHeight = doc.documentElement.clientHeight;
+  const rootStyle = doc.documentElement.style;
+  const pageWidth =
+    parseFloat(rootStyle.getPropertyValue('--available-width')) || doc.documentElement.clientWidth;
+  const pageHeight =
+    parseFloat(rootStyle.getPropertyValue('--available-height')) ||
+    doc.documentElement.clientHeight;
   if (!pageWidth || !pageHeight) return false;
   const { width, height } = table.getBoundingClientRect();
   return width * height >= 2 * pageWidth * pageHeight;
