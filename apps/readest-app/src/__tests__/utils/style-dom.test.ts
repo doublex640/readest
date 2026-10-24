@@ -22,7 +22,7 @@ import {
   applyScrollModeClass,
   applyEinkModeAttribute,
   applyScrollbarStyle,
-  SCROLLBAR_REVEAL_ATTR,
+  SCROLLBAR_REVEAL_VAR,
   applyTranslationStyle,
   getThemeCode,
   getStyles,
@@ -188,11 +188,28 @@ describe('applyScrollbarStyle', () => {
     expect(shadowStyle()!.textContent).toContain('scrollbar-gutter: stable');
   });
 
-  it('gates the hidden thumb on the reveal attribute', () => {
+  it('gates the hidden thumb on the reveal custom property', () => {
     applyScrollbarStyle(document, true, host, true);
-    expect(shadowStyle()!.textContent).toContain(":host([data-scrollbar-reveal='true'])");
-    // Firefox has no webkit pseudo-elements; scrollbar-color is its half.
-    expect(shadowStyle()!.textContent).toContain('scrollbar-color');
+    const inner = shadowStyle()!.textContent!;
+    expect(inner).toContain(`var(${SCROLLBAR_REVEAL_VAR}, transparent)`);
+    // The switch is written inline on the container by useScrollbarReveal.
+    // A `:host(...)` rule cannot reach a scrollbar pseudo-element in Chromium
+    // (it computes to transparent forever), so none may be emitted.
+    expect(inner).not.toContain(':host(');
+  });
+
+  it('never emits scrollbar-width, and resets scrollbar-color to auto', () => {
+    // A non-initial scrollbar-width/scrollbar-color makes Chromium drop every
+    // ::-webkit-scrollbar rule and fall back to the 15px native bar, silently
+    // losing the 8px design. The inherited platform colour has to be reset.
+    for (const hide of [true, false]) {
+      applyScrollbarStyle(document, hide, host, true);
+      const inner = shadowStyle()!.textContent!;
+      expect(inner).not.toContain('scrollbar-width');
+      expect(inner).toContain('scrollbar-color: auto');
+      const decls = inner.match(/scrollbar-color:\s*[^;]+/g) ?? [];
+      expect(decls.every((d) => d.trim() === 'scrollbar-color: auto')).toBe(true);
+    }
   });
 
   it('paints the thumb solid when hideScrollbar is false', () => {
@@ -218,14 +235,14 @@ describe('applyScrollbarStyle', () => {
     expect(outerStyle()!.textContent).toContain('scrollbar-width: none');
   });
 
-  it('drops a stale reveal attribute once the bar is not revealable', () => {
-    host.setAttribute(SCROLLBAR_REVEAL_ATTR, 'true');
-    applyScrollbarStyle(document, false, host, true);
-    expect(host.hasAttribute(SCROLLBAR_REVEAL_ATTR)).toBe(false);
+  it('drops a stale reveal property once the bar is not revealable', () => {
+    const container = document.createElement('div');
+    container.setAttribute('part', 'container');
+    host.shadowRoot!.appendChild(container);
+    container.style.setProperty(SCROLLBAR_REVEAL_VAR, '#fff');
 
-    host.setAttribute(SCROLLBAR_REVEAL_ATTR, 'true');
-    applyScrollbarStyle(document, true, host, true);
-    expect(host.hasAttribute(SCROLLBAR_REVEAL_ATTR)).toBe(true);
+    applyScrollbarStyle(document, false, host, true);
+    expect(container.style.getPropertyValue(SCROLLBAR_REVEAL_VAR)).toBe('');
   });
 });
 

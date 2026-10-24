@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { SCROLLBAR_REVEAL_ATTR } from '@/utils/style';
+import { SCROLLBAR_REVEAL_VAR, SCROLLBAR_THUMB_COLOR } from '@/utils/style';
 
 /** How close to the right edge (px) the pointer must be to bring the bar back. */
 const HOT_ZONE_PX = 40;
@@ -11,8 +11,15 @@ const SCROLL_FLASH_MS = 900;
  *
  * With "Hide Scrollbar" on, the bar keeps its 8px slot but is painted
  * transparent (see `applyScrollbarStyle`), so showing it again is a matter of
- * flipping one attribute -- no layout moves, which is what keeps the column
- * from jolting as the pointer crosses the edge.
+ * flipping one custom property -- no layout moves, which is what keeps the
+ * column from jolting as the pointer crosses the edge.
+ *
+ * That property is written **inline on the scroll container**, not on the
+ * renderer host: Chromium does not inherit a custom property into a scrollbar
+ * pseudo-element, so a `:host([...]) { --x: ... }` rule, or even a `:host(...)
+ * descendant::-webkit-scrollbar-thumb` rule, computes to `transparent` forever
+ * and the bar never comes back. Measured on Chrome 148; inline on the
+ * container is the variant that repaints.
  *
  * Three things bring it back:
  *
@@ -41,11 +48,16 @@ export const useScrollbarReveal = (renderer: HTMLElement | null | undefined, ena
     let container: HTMLElement | null = null;
     const frameDocs = new Set<Document>();
 
+    const paintContainer = (el: HTMLElement | null, reveal: boolean) => {
+      if (!el) return;
+      if (reveal) el.style.setProperty(SCROLLBAR_REVEAL_VAR, SCROLLBAR_THUMB_COLOR);
+      else el.style.removeProperty(SCROLLBAR_REVEAL_VAR);
+    };
+
     const paint = (reveal: boolean) => {
       if (reveal === visible) return;
       visible = reveal;
-      if (reveal) renderer.setAttribute(SCROLLBAR_REVEAL_ATTR, 'true');
-      else renderer.removeAttribute(SCROLLBAR_REVEAL_ATTR);
+      paintContainer(container, reveal);
     };
     const sync = () => paint(hovering || Date.now() < flashUntil);
 
@@ -105,8 +117,12 @@ export const useScrollbarReveal = (renderer: HTMLElement | null | undefined, ena
       const next = shadow.querySelector<HTMLElement>('[part="container"]');
       if (next !== container) {
         container?.removeEventListener('scroll', onScroll);
+        // The property lives on the element, so a fresh container starts out
+        // hidden whatever the old one was showing.
+        paintContainer(container, false);
         container = next;
         container?.addEventListener('scroll', onScroll, { passive: true });
+        paintContainer(container, visible);
       }
       // A long book mounts section after section; a detached document keeps
       // its `defaultView` alive only as long as something like this Set holds
@@ -146,7 +162,7 @@ export const useScrollbarReveal = (renderer: HTMLElement | null | undefined, ena
       document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerleave', onPointerLeave);
       window.removeEventListener('resize', measure);
-      paint(false);
+      paintContainer(container, false);
     };
   }, [renderer, enabled]);
 };

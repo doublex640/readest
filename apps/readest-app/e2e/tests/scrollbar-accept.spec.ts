@@ -23,7 +23,14 @@ type Probe = {
   hasShadowStyle: boolean;
   shadowCss: string;
   outerCss: string;
-  revealAttr: string | null;
+  revealVar: string;
+  thumbIsTransparent: boolean;
+  barWidthCss: string;
+  sbWidthProp: string;
+  sbColorProp: string;
+  borderRight: string;
+  rectWidth: number;
+  overflowY: string;
   containerFound: boolean;
   clientWidth: number;
   offsetWidth: number;
@@ -50,13 +57,24 @@ const probe = (page: import('@playwright/test').Page): Promise<Probe> =>
     const cs = container ? getComputedStyle(container) : null;
     const thumb = container ? getComputedStyle(container, '::-webkit-scrollbar-thumb') : null;
     const track = container ? getComputedStyle(container, '::-webkit-scrollbar-track') : null;
+    const bar = container ? getComputedStyle(container, '::-webkit-scrollbar') : null;
     const cr = container?.getBoundingClientRect();
 
     return {
       hasShadowStyle: !!styleEl,
       shadowCss: styleEl?.textContent?.trim() ?? '',
       outerCss: outer?.textContent?.trim() ?? '',
-      revealAttr: renderer?.getAttribute('data-scrollbar-reveal') ?? null,
+      revealVar: container?.style.getPropertyValue('--scrollbar-reveal-thumb') ?? '',
+      thumbIsTransparent:
+        !thumb ||
+        thumb.backgroundColor === 'rgba(0, 0, 0, 0)' ||
+        thumb.backgroundColor === 'transparent',
+      barWidthCss: bar?.width ?? '(n/a)',
+      sbWidthProp: cs?.getPropertyValue('scrollbar-width') ?? '(n/a)',
+      sbColorProp: cs?.getPropertyValue('scrollbar-color') ?? '(n/a)',
+      borderRight: cs?.borderRightWidth ?? '(n/a)',
+      rectWidth: cr?.width ?? -1,
+      overflowY: cs?.overflowY ?? '(n/a)',
       containerFound: !!container,
       clientWidth: container?.clientWidth ?? -1,
       offsetWidth: container?.offsetWidth ?? -1,
@@ -119,7 +137,8 @@ test('scrolled + hide scrollbar: right-edge reveal, no reflow', async ({ openBoo
   expect(hidden.shadowCss).toContain('scrollbar-gutter: stable');
   // Hidden thumb is transparent, and the track too (no tinted strip giveaway).
   expect(hidden.shadowCss).toContain('transparent');
-  expect(hidden.revealAttr).toBeNull();
+  expect(hidden.revealVar).toBe('');
+  expect(hidden.thumbIsTransparent).toBe(true);
   // 8px slot is genuinely taken from the content box.
   expect(hidden.gutter).toBeGreaterThanOrEqual(7);
 
@@ -143,12 +162,14 @@ test('scrolled + hide scrollbar: right-edge reveal, no reflow', async ({ openBoo
   // --- pointer in the middle of the page: still hidden ----------------------
   await page.mouse.move(b.left + b.width / 2, b.top + Math.min(300, b.height / 2));
   await page.waitForTimeout(300);
-  expect((await probe(page)).revealAttr).toBeNull();
+  expect((await probe(page)).revealVar).toBe('');
 
   // --- pointer into the right-edge hot zone: revealed ----------------------
   await page.mouse.move(b.right - 3, b.top + Math.min(300, b.height / 2));
-  await expect.poll(async () => (await probe(page)).revealAttr).toBe('true');
+  await expect.poll(async () => (await probe(page)).revealVar).not.toBe('');
   const revealed = await probe(page);
+  // Painted, not merely flagged: the switch has to reach the pseudo-element.
+  expect(revealed.thumbIsTransparent).toBe(false);
   console.log('[2] 揭示态:', JSON.stringify(revealed, null, 1));
   await page.screenshot({ path: `${SHOT_DIR}/02-revealed.png` });
   await page.screenshot({ path: `${SHOT_DIR}/02-revealed-strip.png`, clip: strip });
@@ -159,13 +180,13 @@ test('scrolled + hide scrollbar: right-edge reveal, no reflow', async ({ openBoo
 
   // --- pointer leaves the strip: hidden again ------------------------------
   await page.mouse.move(b.left + b.width / 2, b.top + Math.min(300, b.height / 2));
-  await expect.poll(async () => (await probe(page)).revealAttr).toBeNull();
+  await expect.poll(async () => (await probe(page)).revealVar).toBe('');
 
   // --- scrolling flashes the bar even with the pointer in the middle -------
   await page.mouse.move(b.left + b.width / 2, b.top + Math.min(300, b.height / 2));
   const before = (await probe(page)).scrollTop;
   await page.mouse.wheel(0, 600);
-  await expect.poll(async () => (await probe(page)).revealAttr).toBe('true');
+  await expect.poll(async () => (await probe(page)).revealVar).not.toBe('');
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${SHOT_DIR}/03-scrolling-strip.png`, clip: strip });
 
@@ -174,7 +195,7 @@ test('scrolled + hide scrollbar: right-edge reveal, no reflow', async ({ openBoo
   expect(afterScroll.scrollTop).toBeGreaterThan(before);
 
   // Flash expires on its own (~900ms) with the pointer parked mid-page.
-  await expect.poll(async () => (await probe(page)).revealAttr, { timeout: 8_000 }).toBeNull();
+  await expect.poll(async () => (await probe(page)).revealVar, { timeout: 8_000 }).toBe('');
 
   // --- back to a normal bar (hideScrollbar off) ----------------------------
   await reader.openSettings();
@@ -191,7 +212,8 @@ test('scrolled + hide scrollbar: right-edge reveal, no reflow', async ({ openBoo
 
   const shown = await probe(page);
   console.log('[4] 常显态:', JSON.stringify(shown, null, 1));
-  expect(shown.revealAttr).toBeNull();
+  expect(shown.revealVar).toBe('');
+  expect(shown.thumbIsTransparent).toBe(false);
   expect(shown.shadowCss).not.toContain('--scrollbar-reveal-thumb');
   await page.screenshot({ path: `${SHOT_DIR}/04-always-visible-strip.png`, clip: strip });
 });

@@ -1664,15 +1664,15 @@ const SCROLLBAR_SHADOW_STYLE_ID = 'scrollbar-persist-style';
 const SCROLLBAR_WIDTH_PX = 8;
 
 /**
- * Set on the renderer element while the pointer hovers the right edge of the
- * page. Revealing the scrollbar is nothing more than toggling this attribute:
- * the bar's box never changes size, so nothing reflows.
+ * Custom property the shadow-root thumb reads. It is set **inline on the
+ * scroll container itself**, never on the host and never via a `:host(...)`
+ * rule: Chromium does not carry an inherited custom property into a scrollbar
+ * pseudo-element, so `:host([...]) { --x: ... }` computes the thumb to
+ * `transparent` forever and the bar can never be revealed. Measured on
+ * Chrome 148 -- inline on the container is what repaints.
  */
-export const SCROLLBAR_REVEAL_ATTR = 'data-scrollbar-reveal';
-
-/** Custom property the shadow-root thumb reads, flipped by the attribute above. */
-const SCROLLBAR_REVEAL_VAR = '--scrollbar-reveal-thumb';
-const SCROLLBAR_THUMB_COLOR = 'var(--scrollbar-thumb-color, rgba(128, 128, 128, 0.5))';
+export const SCROLLBAR_REVEAL_VAR = '--scrollbar-reveal-thumb';
+export const SCROLLBAR_THUMB_COLOR = 'var(--scrollbar-thumb-color, rgba(128, 128, 128, 0.5))';
 
 /**
  * Style the scrollbar of the reading column.
@@ -1685,9 +1685,11 @@ const SCROLLBAR_THUMB_COLOR = 'var(--scrollbar-thumb-color, rgba(128, 128, 128, 
  *   declaring it is the whole point for Chromium/WebKit: it is what demotes
  *   the overlay scrollbar to a classic one, which stays on the right instead
  *   of fading out a moment after each scroll.
- * - `scrollbar-width` / `scrollbar-color` are the Firefox half. They must stay
- *   on the same rule as the pseudo-elements, which is why they live in the
- *   shadow root too.
+ * - `scrollbar-width` / `scrollbar-color` are mutually exclusive with the
+ *   above in Chromium: declaring either one makes the engine render its
+ *   standard scrollbar and drop every `::-webkit-scrollbar` rule. Since the
+ *   only target here is WebView2 (Chromium), those two are deliberately not
+ *   emitted -- the pseudo-elements carry both the design and the hiding.
  *
  * `--scrollbar-thumb-color` is a custom property, so it inherits through the
  * shadow boundary and the e-ink override in globals.css reaches the thumb.
@@ -1703,7 +1705,9 @@ const SCROLLBAR_THUMB_COLOR = 'var(--scrollbar-thumb-color, rgba(128, 128, 128, 
  *
  * So both states keep the same 8px slot and only the thumb's colour changes.
  * Hiding is "paint the thumb transparent"; revealing is "paint it back". The
- * box is identical in both, so nothing can shift.
+ * box is identical in both, so nothing can shift. The colour switch is written
+ * inline on the container by `useScrollbarReveal` -- a custom property set on
+ * the host does not reach the scrollbar pseudo-element.
  *
  * `scrollbar-gutter: stable` holds the slot even on a short chapter whose
  * content does not overflow, so a section change can't jolt the column either.
@@ -1729,9 +1733,12 @@ export const applyScrollbarStyle = (
   // so there would only steal width from the text.
   const reserveSlot = scrolled && !!shadow;
 
-  // The reveal attribute only means something while the bar can be revealed.
-  if (renderer && !(reserveSlot && hideScrollbar)) {
-    renderer.removeAttribute(SCROLLBAR_REVEAL_ATTR);
+  // The reveal variable only means something while the bar can be revealed.
+  // It is written inline on the container (see useScrollbarReveal), so clear it
+  // whenever this call lands on a state that does not want a hidden thumb.
+  const container = shadow?.querySelector<HTMLElement>('[part="container"]');
+  if (container && !(reserveSlot && hideScrollbar)) {
+    container.style.removeProperty(SCROLLBAR_REVEAL_VAR);
   }
 
   let styleEl = document.getElementById(SCROLLBAR_STYLE_ID) as HTMLStyleElement;
@@ -1774,16 +1781,19 @@ export const applyScrollbarStyle = (
     `  background: ${thumb};`,
     `  border-radius: 4px;`,
     `}`,
-    `[part="container"] { scrollbar-width: thin; scrollbar-gutter: stable; }`,
+    // Only `scrollbar-gutter` here -- never `scrollbar-width` or a real
+    // `scrollbar-color`. Chromium 121+ switches to the standard scrollbar and
+    // ignores every `::-webkit-scrollbar` rule the moment either is declared
+    // with a non-initial value, which silently turns the designed 8px rounded
+    // thumb back into the 15px native one with arrow buttons (measured:
+    // 15px with a platform colour, 8px without).
+    //
+    // `scrollbar-color: auto` is the exception, and it is required: the
+    // property is inherited, the app themes it on an ancestor, and an
+    // inherited non-auto value is enough to knock out the pseudo-elements.
+    // Resetting it to `auto` on the container restores them.
+    `[part="container"] { scrollbar-gutter: stable; scrollbar-color: auto; }`,
   ];
-  if (hideScrollbar) {
-    // `scrollbar-color` is what conceals the bar in Firefox, which has no
-    // webkit pseudo-elements: it keeps the width but paints nothing.
-    rules.push(
-      `:host([${SCROLLBAR_REVEAL_ATTR}='true']) { ${SCROLLBAR_REVEAL_VAR}: ${SCROLLBAR_THUMB_COLOR}; }`,
-      `[part="container"] { scrollbar-color: var(${SCROLLBAR_REVEAL_VAR}, transparent) transparent; }`,
-    );
-  }
   shadowStyleEl.textContent = rules.join('\n');
 };
 
