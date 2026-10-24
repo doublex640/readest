@@ -329,6 +329,33 @@ describe('single-tap opens image gallery / table zoom in reflowable books (#4584
     });
   });
 
+  // 脂評匯校本-style books lay a whole chapter in one giant <table> (every
+  // paragraph is a row). That table is layout, not zoomable content: tapping
+  // its text must turn the page / toggle the toolbar, never open the viewer.
+  test('reflowable: a chapter-length layout table is not zoomable media', async () => {
+    const handlers = await importHandlers();
+    const table = document.createElement('table');
+    const cell = document.createElement('td');
+    cell.textContent = '正文';
+    table.appendChild(cell);
+    document.body.appendChild(table);
+    // The reader iframe is one page; the chapter table spans twenty of them.
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(800);
+    vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(1200);
+    vi.spyOn(table, 'getBoundingClientRect').mockReturnValue({
+      width: 800,
+      height: 1200 * 20,
+    } as DOMRect);
+
+    tap(handlers, false, cell);
+
+    const types = postedMessages().map((m) => m['type']);
+    expect(types).not.toContain('iframe-open-media');
+    expect(types).toContain('iframe-single-click');
+
+    table.remove();
+  });
+
   // #6856: the table zoom covered the place a link in the table leads to.
   test('reflowable: tap on a link inside a table follows the link, not the table zoom', async () => {
     const handlers = await importHandlers();

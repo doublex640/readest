@@ -451,6 +451,21 @@ export const handleWheel = (bookKey: string, event: WheelEvent) => {
 // gallery / table zoom viewers consume.
 type MediaTarget = { elementType: 'image'; src: string } | { elementType: 'table'; html: string };
 
+// A zoomable table is a self-contained data table that fits on a page. Chinese
+// classics editions (e.g. 脂評匯校本) lay a whole chapter in one giant <table>
+// — every paragraph is a row, so the table spans dozens of pages. That is a
+// layout table, not content: claiming it as media makes any tap on its text
+// offer the table viewer in the page's center tap zone. Tables larger than a
+// couple of pages are layout.
+const isLayoutTable = (table: HTMLElement) => {
+  const doc = table.ownerDocument;
+  const pageWidth = doc.documentElement.clientWidth;
+  const pageHeight = doc.documentElement.clientHeight;
+  if (!pageWidth || !pageHeight) return false;
+  const { width, height } = table.getBoundingClientRect();
+  return width * height >= 2 * pageWidth * pageHeight;
+};
+
 const detectMediaTarget = (target: HTMLElement | null): MediaTarget | null => {
   if (!target) return null;
   if (target.localName === 'img') {
@@ -465,8 +480,10 @@ const detectMediaTarget = (target: HTMLElement | null): MediaTarget | null => {
     if (href) return { elementType: 'image', src: new URL(href, svgImage.baseURI).href };
   }
   const table = target.localName === 'table' ? target : target.closest('table');
-  // A link inside a table is followed; the table zooms from anywhere else (#6856)
-  if (table && !table.contains(target.closest('a'))) {
+  // A link inside a table is followed; the table zooms from anywhere else
+  // (#6856) — unless the table is a chapter-length layout table, which is no
+  // more a zoom target than the surrounding text is.
+  if (table && !table.contains(target.closest('a')) && !isLayoutTable(table)) {
     return { elementType: 'table', html: (table as HTMLElement).outerHTML };
   }
   return null;
