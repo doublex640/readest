@@ -73,7 +73,10 @@ const nextConfig = {
   assetPrefix: '',
   reactStrictMode: true,
   serverExternalPackages: ['isows'],
-  allowedDevOrigins: ['192.168.2.120'],
+  // Next 16 only allowlists `localhost` by default; a page opened via
+  // `127.0.0.1` is treated as cross-origin, so its dev resources (HMR/RSC)
+  // are blocked and the client never hydrates — the window stays blank.
+  allowedDevOrigins: ['192.168.2.120', '127.0.0.1', 'localhost'],
   webpack: (config, { isServer }) => {
     config.resolve.alias = {
       ...config.resolve.alias,

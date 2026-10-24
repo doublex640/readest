@@ -22,6 +22,7 @@ import {
   applyScrollModeClass,
   applyEinkModeAttribute,
   applyScrollbarStyle,
+  SCROLLBAR_REVEAL_ATTR,
   applyTranslationStyle,
   getThemeCode,
   getStyles,
@@ -149,37 +150,82 @@ describe('applyEinkModeAttribute', () => {
 // applyScrollbarStyle
 // ---------------------------------------------------------------------------
 describe('applyScrollbarStyle', () => {
+  let host: HTMLElement;
+
   beforeEach(() => {
     // Clean up any leftover style elements
     const el = document.getElementById('scrollbar-hide-style');
     if (el) el.remove();
+    host = document.createElement('div');
+    host.attachShadow({ mode: 'open' });
   });
 
-  it('creates a style element with scrollbar-width: none when hideScrollbar is true', () => {
-    applyScrollbarStyle(document, true);
-    const el = document.getElementById('scrollbar-hide-style') as HTMLStyleElement;
-    expect(el).not.toBeNull();
-    expect(el.textContent).toContain('scrollbar-width: none');
+  afterEach(() => {
+    host.remove();
+  });
+
+  const outerStyle = () =>
+    document.getElementById('scrollbar-hide-style') as HTMLStyleElement | null;
+  const shadowStyle = () =>
+    host.shadowRoot?.getElementById('scrollbar-persist-style') as HTMLStyleElement | null;
+
+  it('keeps the slot and only hides the thumb when hideScrollbar is true', () => {
+    applyScrollbarStyle(document, true, host, true);
+    const inner = shadowStyle()!.textContent!;
+    // The width must stay put: swapping it for 0 rewrites clientWidth and
+    // jolts the column sideways, which is exactly what this design avoids.
+    expect(inner).toContain('width: 8px');
+    expect(inner).not.toContain('width: 0');
+    expect(inner).toContain('background: var(--scrollbar-reveal-thumb, transparent)');
+    expect(inner).toContain('[part="container"]::-webkit-scrollbar-track');
+    expect(inner).toContain('background: transparent');
+  });
+
+  it('reserves the gutter in both hidden and visible states', () => {
+    applyScrollbarStyle(document, true, host, true);
+    expect(shadowStyle()!.textContent).toContain('scrollbar-gutter: stable');
+    applyScrollbarStyle(document, false, host, true);
+    expect(shadowStyle()!.textContent).toContain('scrollbar-gutter: stable');
+  });
+
+  it('gates the hidden thumb on the reveal attribute', () => {
+    applyScrollbarStyle(document, true, host, true);
+    expect(shadowStyle()!.textContent).toContain(":host([data-scrollbar-reveal='true'])");
+    // Firefox has no webkit pseudo-elements; scrollbar-color is its half.
+    expect(shadowStyle()!.textContent).toContain('scrollbar-color');
+  });
+
+  it('paints the thumb solid when hideScrollbar is false', () => {
+    applyScrollbarStyle(document, false, host, true);
+    const inner = shadowStyle()!.textContent!;
+    expect(inner).toContain('width: 8px');
+    expect(inner).toContain('background: var(--scrollbar-thumb-color,');
+    expect(inner).not.toContain('scrollbar-reveal-thumb');
   });
 
   it('updates existing style element on subsequent calls', () => {
-    applyScrollbarStyle(document, true);
-    applyScrollbarStyle(document, true);
-    const elements = document.querySelectorAll('#scrollbar-hide-style');
-    expect(elements.length).toBe(1);
+    applyScrollbarStyle(document, true, host, true);
+    applyScrollbarStyle(document, true, host, true);
+    expect(document.querySelectorAll('#scrollbar-hide-style').length).toBe(1);
+    expect(host.shadowRoot!.querySelectorAll('#scrollbar-persist-style').length).toBe(1);
   });
 
-  it('sets scrollbar-width: thin when hideScrollbar is false and element exists', () => {
-    applyScrollbarStyle(document, true);
-    applyScrollbarStyle(document, false);
-    const el = document.getElementById('scrollbar-hide-style') as HTMLStyleElement;
-    expect(el.textContent).toContain('scrollbar-width: thin');
+  it('does not reserve a slot in paginated mode', () => {
+    applyScrollbarStyle(document, false, host, false);
+    expect(shadowStyle()!.textContent).toBe('');
+    applyScrollbarStyle(document, true, host, false);
+    // Paginated mode has no vertical scrollbar to reveal.
+    expect(outerStyle()!.textContent).toContain('scrollbar-width: none');
   });
 
-  it('does not create a style element when hideScrollbar is false and none exists', () => {
-    applyScrollbarStyle(document, false);
-    const el = document.getElementById('scrollbar-hide-style');
-    expect(el).toBeNull();
+  it('drops a stale reveal attribute once the bar is not revealable', () => {
+    host.setAttribute(SCROLLBAR_REVEAL_ATTR, 'true');
+    applyScrollbarStyle(document, false, host, true);
+    expect(host.hasAttribute(SCROLLBAR_REVEAL_ATTR)).toBe(false);
+
+    host.setAttribute(SCROLLBAR_REVEAL_ATTR, 'true');
+    applyScrollbarStyle(document, true, host, true);
+    expect(host.hasAttribute(SCROLLBAR_REVEAL_ATTR)).toBe(true);
   });
 });
 
