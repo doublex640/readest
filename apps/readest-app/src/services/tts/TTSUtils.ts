@@ -1,12 +1,22 @@
+import { eventDispatcher } from '@/utils/event';
 import { TTSVoice } from './types';
 
 export class TTSUtils {
   private static readonly LOCAL_STORAGE_KEY = 'ttsPreferredVoices';
   private static readonly PREFERRED_CLIENT_KEY = 'preferredClient';
 
+  // Fired whenever the saved engine/voice changes, from any entry point: the
+  // voice picker in the reader or the engine/voice pickers in Settings. The
+  // settings panel listens so the two views never disagree while both exist.
+  static readonly VOICE_CHANGED_EVENT = 'tts-voice-preference-changed';
+
   private static normalizeLanguage(language: string): string {
     if (!language) return 'n/a';
     return language.toLowerCase().slice(0, 2);
+  }
+
+  private static notifyVoiceChanged(): void {
+    void eventDispatcher.dispatch(this.VOICE_CHANGED_EVENT);
   }
 
   static setPreferredClient(engine: string): void {
@@ -14,6 +24,7 @@ export class TTSUtils {
     const preferences = this.getPreferences();
     preferences[this.PREFERRED_CLIENT_KEY] = engine;
     localStorage.setItem(this.LOCAL_STORAGE_KEY, JSON.stringify(preferences));
+    this.notifyVoiceChanged();
   }
 
   static setPreferredVoice(engine: string, language: string, voiceId: string): void {
@@ -22,6 +33,7 @@ export class TTSUtils {
     const lang = this.normalizeLanguage(language);
     preferences[`${engine}-${lang}`] = voiceId;
     localStorage.setItem(this.LOCAL_STORAGE_KEY, JSON.stringify(preferences));
+    this.notifyVoiceChanged();
   }
 
   static getPreferredClient(): string | null {
