@@ -434,18 +434,25 @@ export class EdgeSpeechTTS {
   async #fetchEdgeSpeechHttp({ lang, text, voice, rate }: EdgeTTSPayload): Promise<Response> {
     const url = getAPIBaseUrl() + '/tts/edge';
 
-    const response = await fetchWithAuth(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    // Optional auth: the route wants a session in production, while a
+    // development build runs signed out and the route allows anonymous
+    // synthesis there. Attaching the token when there is one keeps both honest.
+    const response = await fetchWithAuth(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: text,
+          voice,
+          rate,
+          lang,
+        }),
       },
-      body: JSON.stringify({
-        input: text,
-        voice,
-        rate,
-        lang,
-      }),
-    });
+      { optionalAuth: true },
+    );
 
     if (!response.ok) {
       throw new Error(`Edge TTS HTTP request failed: ${response.status} ${response.statusText}`);

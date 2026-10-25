@@ -16,9 +16,18 @@ const isValidVoice = (voiceId: string): boolean => {
   return EdgeSpeechTTS.voices.some((v) => v.id === voiceId);
 };
 
+// A page can never reach Edge on its own: Microsoft rejects page origins, and
+// the browser cannot forge the headers the endpoint wants (Origin, Cookie), so
+// every Edge sentence in a web build goes through this proxy. A development
+// build has no account backend to authenticate against (`.env.web` runs signed
+// out), which used to leave the browser with no transport at all and reading
+// aloud silent. Anonymous synthesis is therefore allowed in development only;
+// a production build keeps the session gate.
+const ANONYMOUS_SYNTHESIS_ALLOWED = process.env.NODE_ENV !== 'production';
+
 export async function POST(request: NextRequest) {
   const { user, token } = await validateUserAndToken(request.headers.get('authorization'));
-  if (!user || !token) {
+  if ((!user || !token) && !ANONYMOUS_SYNTHESIS_ALLOWED) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 403 });
   }
 

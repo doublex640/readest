@@ -194,4 +194,35 @@ describe('fetchWithAuth', () => {
       'Request failed',
     );
   });
+
+  // Endpoints that accept anonymous callers in development (the Edge TTS proxy
+  // does, so a signed-out dev build can still read aloud) ask for an optional
+  // Authorization header instead of refusing to send the request at all.
+  it('sends the request without Authorization when auth is optional and absent', async () => {
+    vi.mocked(getAccessToken).mockResolvedValueOnce(null);
+    mockFetch.mockResolvedValueOnce(new Response('OK', { status: 200 }));
+
+    await fetchWithAuth(
+      'https://api.example.com/tts/edge',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      { optionalAuth: true },
+    );
+
+    const opts = mockFetch.mock.calls[0]![1];
+    expect(opts.headers.Authorization).toBeUndefined();
+    expect(opts.headers['Content-Type']).toBe('application/json');
+  });
+
+  it('still sends Authorization when auth is optional and a token exists', async () => {
+    vi.mocked(getAccessToken).mockResolvedValueOnce('tok');
+    mockFetch.mockResolvedValueOnce(new Response('OK', { status: 200 }));
+
+    await fetchWithAuth(
+      'https://api.example.com/tts/edge',
+      { method: 'POST' },
+      { optionalAuth: true },
+    );
+
+    expect(mockFetch.mock.calls[0]![1].headers.Authorization).toBe('Bearer tok');
+  });
 });

@@ -55,11 +55,15 @@ export class EdgeTTSClient extends BufferedTTSClient {
       this.initialized = true;
       return true;
     }
-    if (
+    // In a browser the wss attempt is hopeless rather than intermittent: the
+    // page cannot set the Origin/Cookie headers Edge demands, so the proxy is
+    // the only transport there. It normally requires a session; a development
+    // build has no account backend, and the route allows anonymous synthesis
+    // for exactly that case (see /api/tts/edge).
+    const proxyUsable =
       !isTauriAppPlatform() &&
-      this.controller?.isAuthenticated &&
-      (await this.#edgeProvider.init('https'))
-    ) {
+      (this.controller?.isAuthenticated || process.env.NODE_ENV === 'development');
+    if (proxyUsable && (await this.#edgeProvider.init('https'))) {
       this.initialized = true;
       return true;
     }

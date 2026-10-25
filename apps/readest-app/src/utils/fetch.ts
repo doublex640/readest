@@ -10,14 +10,18 @@ export const fetchWithTimeout = (url: string, options: RequestInit = {}, timeout
   }).finally(() => clearTimeout(id));
 };
 
-export const fetchWithAuth = async (url: string, options: RequestInit) => {
+export const fetchWithAuth = async (
+  url: string,
+  options: RequestInit,
+  { optionalAuth = false }: { optionalAuth?: boolean } = {},
+) => {
   const token = await getAccessToken();
-  if (!token) {
+  if (!token && !optionalAuth) {
     throw new Error('Not authenticated');
   }
   const headers = {
     ...options.headers,
-    Authorization: `Bearer ${token}`,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
   const response = await fetch(url, { ...options, headers });
