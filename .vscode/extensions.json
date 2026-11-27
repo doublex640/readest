@@ -1,8 +1,0 @@
-{
-  "recommendations": [
-    "ms-vscode.vscode-typescript-next",
-    "dbaeumer.vscode-eslint",
-    "biomejs.biome",
-    "rust-lang.rust-analyzer"
-  ]
-}
